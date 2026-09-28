@@ -8,8 +8,11 @@
     1. Wait a random time (WAIT_MIN_MS..WAIT_MAX_MS)
     2. Pick a random color
     3. Pick a random start pixel (START_MIN..START_MAX)
-    4. Pick a random run length (LENGTH_MIN..LENGTH_MAX), clamped so
-       start + length never runs past the end of the strip
+    4. Pick a random run length (LENGTH_MIN..LENGTH_MAX). If LOOP is false,
+       this is clamped so start + length never runs past the end of the
+       strip. If LOOP is true, it is NOT clamped — instead the run wraps
+       around and continues from pixel 0 (e.g. start=18, NUM_LEDS=20 gives
+       the sequence 18, 19, 0, 1, 2, ...).
     5. "Marquee" the run on, lighting one new pixel every MARQUEE_STEP_MIN_MS
        to MARQUEE_STEP_MAX_MS ms (a fresh random cadence is picked before
        each pixel, so the marquee speed jitters instead of ticking evenly)
@@ -51,7 +54,7 @@
 
 // ------------------------------ USER TUNABLES ------------------------------
 
-#define LED_PIN            D5          // data pin driving the strip
+#define LED_PIN            D2          // data pin driving the strip
 #define LED_TYPE           WS2812B     // e.g. WS2811, WS2812, WS2812B, SK6812...
 #define COLOR_ORDER        GRB         // swap if colors look wrong (e.g. RGB)
 #define BRIGHTNESS         255          // global brightness ceiling, 0-255
@@ -65,8 +68,18 @@
 
 #define LENGTH_MIN         10          // step 4: min random run length (10)
 #define LENGTH_MAX         15          // step 4: max random run length (30)
-                                        //   (auto-clamped so start+length
-                                        //    never exceeds NUM_LEDS)
+                                        //   if LOOP is false: auto-clamped so
+                                        //   start+length never exceeds NUM_LEDS.
+                                        //   if LOOP is true: not clamped —
+                                        //   the run wraps around to pixel 0
+                                        //   instead (see LOOP below).
+
+#define LOOP                true       // true: a run that would run past the
+                                        //   last LED wraps around and keeps
+                                        //   going from pixel 0, instead of
+                                        //   being cut short at the strip end.
+                                        //   e.g. start=18, NUM_LEDS=20 ->
+                                        //   18, 19, 0, 1, 2, ...
 
 #define MARQUEE_STEP_MIN_MS 5           // Speed: fastest ms between new pixels
 #define MARQUEE_STEP_MAX_MS 50          // Speed: slowest ms between new pixels
@@ -175,9 +188,11 @@ void beginNewFlash(unsigned long now) {
   currentStart = random(START_MIN, START_MAX + 1);
 
   int length = random(LENGTH_MIN, LENGTH_MAX + 1);
-  if (currentStart + length > NUM_LEDS) {
+  if (!LOOP && currentStart + length > NUM_LEDS) {
     length = NUM_LEDS - currentStart;   // never exceed the strip
   }
+  // When LOOP is true, length is left as-is; updateSpawning() wraps the
+  // pixel index with modulo NUM_LEDS instead of clamping it here.
   currentLength = length;
 
   marqueeIndex = 0;
@@ -200,7 +215,8 @@ void updateSpawning(unsigned long now) {
   lastSpawnTime = now;
 
   bool isLast = (marqueeIndex == currentLength - 1);
-  spawnPixel(currentStart + marqueeIndex, now, isLast);
+  int ledIndex = (currentStart + marqueeIndex) % NUM_LEDS;  // wraps when LOOP runs past the end
+  spawnPixel(ledIndex, now, isLast);
   marqueeIndex++;
 
   // Roll a fresh random cadence for the gap before the *next* pixel.
